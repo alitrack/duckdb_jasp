@@ -1,0 +1,9 @@
+target/
+build/
+configure/
+*.duckdb_extension
+*.duckdb_extension.wasm
+*.no_metadata.wasm
+Cargo.lock.bak
+*.sqlite
+.DS_Store
