@@ -4,6 +4,9 @@ PROJ_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 EXTENSION_NAME=jasp_ext
 USE_UNSTABLE_C_API=0
+# Stable C API (C_STRUCT): v1.2.0 is the universal version stamp -- a v1.x-stamped build
+# loads on BOTH the 1.5.x and 2.0.x GA hosts. Do NOT bump to v1.5.x (rejected by lower 1.5.x
+# hosts) or v2.x (no stable C API surface; loads on neither). Dual-line load is enforced in CI.
 TARGET_DUCKDB_VERSION=v1.2.0
 
 # Use minimal configure in CI (compat with Docker Python 3.6)

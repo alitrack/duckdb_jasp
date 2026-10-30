@@ -34,6 +34,14 @@ jobs:
         run: make test_release
       - name: Verify
         run: ls -la build/release/jasp_ext.duckdb_extension
+      - name: Dual-line verify (load built ext on DuckDB 1.5.6 + 2.0.0 GA)
+        run: |
+          set -euo pipefail
+          curl -sL -o /tmp/d156.gz https://github.com/duckdb/duckdb/releases/download/v1.5.6/duckdb_cli-linux-amd64.gz && gzip -d -f /tmp/d156.gz && chmod +x /tmp/d156
+          curl -sL -o /tmp/d200.tgz https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-cli-linux-amd64.tar.gz && tar xzf /tmp/d200.tgz -C /tmp
+          /tmp/d156 -unsigned -c "LOAD 'build/release/jasp_ext.duckdb_extension'; SELECT version() AS v156;"
+          /tmp/duckdb -unsigned -c "LOAD 'build/release/jasp_ext.duckdb_extension'; SELECT version() AS v200;"
+          echo 'OK: built extension (v1.x stable C API) loads on both the 1.5.x and 2.0.x GA hosts.'
 
   macos-arm64-smoke:
     name: macOS arm64 smoke
@@ -68,9 +76,22 @@ jobs:
       exclude_archs: 'linux_amd64_musl;wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools;windows_amd64_mingw'
     secrets: inherit
 
+  duckdb-20-build:
+    name: Distribution (DuckDB 2.0)
+    needs: [linux-amd64-smoke, macos-arm64-smoke]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera
+    with:
+      duckdb_version: v2.0.0
+      ci_tools_version: v2.0-cyanoptera
+      extension_name: jasp_ext
+      extra_toolchains: rust
+      exclude_archs: 'linux_amd64_musl;wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools;windows_amd64_mingw'
+    secrets: inherit
+
   release:
     name: Create GitHub Release
-    needs: duckdb-stable-build
+    needs: [duckdb-stable-build, duckdb-20-build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -82,7 +103,7 @@ jobs:
           path: artifacts
           merge-multiple: false
 
-      - name: Rename release assets with platform suffix
+      - name: Rename release assets with platform + duckdb-version suffix
         shell: bash
         run: |
           set -euo pipefail
@@ -92,7 +113,10 @@ jobs:
           for artifact_dir in artifacts/*; do
             [ -d "$artifact_dir" ] || continue
             artifact_name=$(basename "$artifact_dir")
+            # artifact_name = <ext>-<duckdb_version>-extension-<arch>[postfix]
             platform_suffix="${artifact_name##*-extension-}"
+            rest="${artifact_name%*-extension-*}"
+            duck_line="${rest##*-}"
 
             for asset in "$artifact_dir"/*.duckdb_extension "$artifact_dir"/*.duckdb_extension.wasm; do
               [ -f "$asset" ] || continue
@@ -106,7 +130,7 @@ jobs:
                 stem="${asset_name%.duckdb_extension}"
               fi
 
-              cp "$asset" "release-assets/${stem}-${platform_suffix}${extension_suffix}"
+              cp "$asset" "release-assets/${stem}-${duck_line}-${platform_suffix}${extension_suffix}"
             done
           done
 
